@@ -1,0 +1,5 @@
+.venv/
+*.png
+*_out.lst
+*_out.txt
+*_out.npz
