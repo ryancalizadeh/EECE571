@@ -15,10 +15,7 @@ if __name__ == '__main__':
         ss.TDS.load_plotter()
 
     fig, ax = ss.TDS.plt.plot((5, 6, 7, 8))
-    fig.savefig("plot.png", dpi=300)
-
-    fig, ax = ss.TDS.plt.plot(ss.GENROU.omega, a=(0, 3))
-    fig.savefig("plot_omega.png", dpi=300)
+    fig.savefig("plot_w.png", dpi=300)
 
     fig, ax = ss.TDS.plt.plot((9, 10, 11, 12))
-    fig.savefig("e_plot.png", dpi=300)
+    fig.savefig("plot_e.png", dpi=300)
