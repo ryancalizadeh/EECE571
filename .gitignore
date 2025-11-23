@@ -3,3 +3,4 @@
 *_out.lst
 *_out.txt
 *_out.npz
+*.pyc
