@@ -219,22 +219,19 @@ print("--------------------- 4. Verifying Identified Model ---------------------
 
 # First, identify initial state x0.
 # To see if we can find the initial state, let's check the observability of the system. 
-C_rank = np.linalg.matrix_rank(C_id)
-C_num_columns = C_id.shape[1]
-if C_rank == C_num_columns:
-    print("C has full column rank. Initial state can be determined from outputs.")
-else:
-    print("C does not have full column rank!!!!!!!!!!!!!!!!!!!!")
-
 Observability_matrix = np.vstack([C_id @ np.linalg.matrix_power(A_id, i) for i in range(model_order)])
 rank_of_observability = np.linalg.matrix_rank(Observability_matrix)
+if rank_of_observability == model_order:
+    print("The system is observable. Initial state can be determined from outputs.")
+else:
+    print("The system is NOT observable!!!!!!!!!!!!!!!!!!!!")
+
 # x0_estimate = np.linalg.pinv(Observability_matrix) @ Y[0:model_order* C_id.shape[0], :].flatten()
 ABC = np.hstack([Y[i, :] for i in range(model_order)])
-print("Shape of stacked outputs for initial state estimation: ", np.shape(ABC))
+# print("Shape of stacked outputs for initial state estimation: ", np.shape(ABC))
 x0_estimate = np.linalg.pinv(Observability_matrix) @ ABC
 
 print("Estimated initial state x0: ", x0_estimate)
-print("Rank of the Observability Matrix: ", rank_of_observability)
 
 # Now, simulate the identified model's response using the estimated initial state 
 # and the original inputs u. 
