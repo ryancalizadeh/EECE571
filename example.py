@@ -7,8 +7,17 @@ import matplotlib.pyplot as plt
 
 if __name__ == '__main__':
     andes.config_logger(stream_level=50)
-    ss = andes.run('kundur_full.xlsx', default_config=True)
-    ss.TDS.config.tf = 20
+    ss = andes.run('kundur_full.xlsx', default_config=True, pert='pert.py')
+    ss.TDS.config.diagnose = 1
+    ss.TDS.config.verbose = 2
+    ss.TDS.config.tf = 8
+    ss.TDS.config.criteria = 0
+    ss.TDS.config.tstep = 0.01
+
+    for field in dir(ss.TDS.config):
+        print(f'{field}: {getattr(ss.TDS.config, field)}')
+    # exit()
+
     ss.TDS.run()
     print(ss.exit_code)
     if ss.TDS.load_plotter() is None:
