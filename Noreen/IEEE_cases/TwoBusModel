@@ -1,0 +1,129 @@
+# Package Imports
+import numpy as np
+import scipy as sp
+import control as ct
+import cvxpy as cp
+
+# Plotting
+import matplotlib.pyplot as plt
+# %config InlineBackend.figure_format = 'svg'
+plt.style.use('tableau-colorblind10')
+
+from scipy.signal import cont2discrete
+
+## Modelling
+# Parameters
+M = 0.5
+D = 1.0
+L = 0.3
+tau_v = 0.1
+k_q = 1.0
+eta_b = 0.95
+
+# Continuous-time A matrix
+A_c = np.array([
+    [-D/M,   L/M,     0,           0,         0],
+    [ L/M,  -D/M,     0,           0,         0],
+    [  0,     0,   -1/tau_v,       0,         0],
+    [  0,     0,      0,       -1/tau_v,      0],
+    [  0,     0,      0,           0,         0]
+])
+
+# Continuous B matrix (controls)
+B_c = np.array([
+    [1/M,     0,      1/M],       # P*1, Q*1, P_batt
+    [  0,     0,       0 ],
+    [  0,  k_q/tau_v,  0 ],
+    [  0,     0,       0 ],
+    [  0,     0,   -eta_b]
+])
+
+# Disturbance matrix
+Bd_c = np.array([
+    [0],
+    [-1/M],
+    [0],
+    [0],
+    [0]
+])
+
+# Sampling time
+Ts = 0.1
+
+# Discretization
+A, B, Bd, _, _ = cont2discrete(
+    (A_c, B_c, Bd_c, np.zeros((5,3))), Ts)
+
+print("A_d =\n", A)
+print("B_d =\n", B)
+print("Bd_d =\n", Bd)
+
+## MPC 
+n = 5
+m = 3
+
+# Initial state
+x0 = np.array([0., 0., 0., 0., 0.5])
+
+# Define time horizon
+T = 10
+# Define prediction horizon
+K = 20
+
+
+# Define cost weights
+# State weights (Q) - diag([f1, f2, V1, V2, E_b])
+Q = np.diag([1e4,   # Δf1  (Hz)  - very high: keep frequency near nominal
+             1e4,   # Δf2  (Hz)
+             1e3,   # ΔV1  (pu) - strong but smaller than frequency
+             1e3,   # ΔV2  (pu)
+             10.0]) # Ebat (pu) - modest penalty on SOC deviation (or cycling)
+
+# Control weights (R) - diag([ΔP1*, ΔQ1*, P_batt])
+R = np.diag([1.0,   # ΔP*1  - moderate penalty on changing active setpoint
+             10.0,  # ΔQ*1  - stronger penalty on reactive setpoint changes (to avoid aggressive Q moves)
+             0.1])  # P_batt - lighter penalty to allow battery to be used for frequency support
+
+# Terminal cost (can be equal to Q or scaled)
+Qf = Q.copy()  # simple choice
+
+x_traj = np.zeros((n, T+1))
+u_traj = np.zeros((m, T))
+
+x_traj[:,0] = x0
+
+for t in range(T):
+  x = cp.Variable((n, K+1))
+  u = cp.Variable((m, K))
+
+  cost = 0
+  constr = []
+  for k in range(K):
+    # Cost function
+    print(cp.sum_squares(x[:, k]))
+    cost += Q * cp.sum_squares(x[:, k]) + R * cp.sum_squares(u[:, k])
+    # System dynamics
+    constr += [x[:,k+1] == A@x[:,k] + B@u[:,k]]
+
+    # Input constraints
+    constr += [cp.abs(u[:,k]) <= 3]
+
+  # Initial constraint
+  constr += [x[:, 0] == x_traj[:,t]]
+  # Terminal constraint
+  constr += [x[:, K] == 0]
+
+  prob = cp.Problem(cp.Minimize(cost), constr)
+  prob.solve()
+  u_traj[:, t] = u[:, 0].value
+  x_traj[:, t+1] = A@x_traj[:, t] + B@u_traj[:, t]
+
+
+#%% Plot closed-loop state trajectory
+f4 = plt.figure()
+plt.plot(x_traj[0, :], x_traj[1, :], marker='x')
+plt.xlabel("$(x_k)_1$", fontsize=16)
+plt.ylabel("$(x_k)_2$", fontsize=16)
+plt.legend([f"K = {K}"])
+plt.title("Closed-loop: Receding-Horizon Control")
+plt.grid(which='both', axis='both', color='lightgrey', linestyle='--', linewidth=0.5)
