@@ -3,3 +3,8 @@ scipy
 andes
 matplotlib
 pandas
+casadi
+control
+sippy_unipi
+cvxpy
+ipywidgets
