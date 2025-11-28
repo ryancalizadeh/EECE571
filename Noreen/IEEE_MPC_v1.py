@@ -92,13 +92,11 @@ n_t = len(time)
 print('Time samples:', n_t)
 t_dt = data_cleaner.data_cleaner(time)
 
-# Generator rotor speeds (omega) and bus voltages
-# omega = ssys['omega GENROU 1']
-# TS_Data.x[:, ssys.GENROU.omega.a]
+# Bus voltages
 # Vbus = TS_Data.y[:, ssys.Bus.v.a]
 no_buses = 14
 Vbus = ssys[[f'v Bus {b}' for b in range(1, no_buses+1)]].values
-print('Bus voltage data:', Vbus)
+# print('Bus voltage data:\n', Vbus)
 
 # Choose outputs and inputs for identification & MPC
 
@@ -183,7 +181,7 @@ U = df[[f'u{j+1}' for j in range(u.shape[1])]].values
 # Choose model order (experiment with this)
 model_order = 20
 print('Running N4SID...')
-model = sysid(Y, U, 'N4SID', SS_fixed_order=model_order)
+model = sysid(Y, U, 'N4SID', SS_fixed_order=model_order) #, SS_A_stability=True)
 print('Finished identification.')
 
 A_id = np.array(model.A)
@@ -281,15 +279,33 @@ x_0 = np.linalg.pinv(C_id) @ (y_0 - D_id @ u_0)
 x_traj[:, 0] = x_0
 
 # ASIDE: mini test 
-y_current = C_id @ x_0 + D_id @ u_0
-x_next = A_id @ x_0 + B_id @ u_0
+# x_1 = A_id @ x_0 + B_id @ u_0
+# y_1 = C_id @ x_1 + D_id @ u_0
+# x_2 = A_id @ x_1 + B_id @ u_0
+# y_2 = C_id @ x_2 + D_id @ u_0
 
-print('current y: ', y_current)
-print('error in y: ', np.abs(y_0 - y_current)/y_0*100)
-print('current x: ', x_0[0:3])
-print('next x: ', x_next[0:3])
+x = np.zeros([n, 10])
+x[:, 0] = x_0
+y = np.zeros([p, 10])
+error=np.zeros([10])
+for i in range (9):
+    x[:, i+1] = A_id @ x[:, i] + B_id @ u_0
+    y[:, i] = C_id @ x[:, i] + D_id @ u_0
+    error[i] = np.mean(np.abs((y_0 - y[:, i])/y_0))*100
+
+print('err in y: ', error)
+print('average err in y: ', np.mean(error))
+
+print('y1: ', y_1)
+print('avg error in y1: ', np.mean(np.abs(y_0 - y_1)/y_0)*100)
+print('avg error in y2: ', np.mean(np.abs(y_0 - y_2)/y_0)*100)
+
+
+# print('current x: ', x_0[0:3])
+# print('next x: ', x_next[0:3])
 print('avg error in x: ', np.mean(np.abs(x_0 - x_next)/x_0)*100)
 
+xnext
 
 # Optimization weights
 Q = 1000*np.eye(p)
