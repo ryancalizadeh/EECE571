@@ -81,7 +81,7 @@ case = 'IEEE_cases/ieee14_alter_v6.xlsx' # abs active power input disturbances, 
 T_END = 20.0
 
 
-ssys = ANDES_Case_Runner(case, T_END) 
+# ssys = ANDES_Case_Runner(case, T_END) 
 ssys = pd.read_csv('ieee14_alter_v6_out.csv')
 
 # %%
@@ -140,6 +140,27 @@ idx_time = (t_dt >= 12) & (t_dt <= 17)
 u[idx_time, 2] = 0.135 + 0.05 * np.sin(2*np.pi * 0.5 * (t_dt[idx_time] - 12 )**2 /5)
 idx_time = t_dt >= 17
 u[idx_time, 2] = 0.135
+
+# idx_time = t_dt <= 5
+# print('idx_time: ', idx_time)
+# # u[:, 0] = 0.03
+# u[idx_time, 0] = 0.18 + 0.07 * np.sin(2*np.pi * 0.5 * t_dt[idx_time]**2 /5)
+# idx_time = t_dt >= 5
+# u[idx_time, 0] = 0.18
+
+# idx_time = t_dt <= 6
+# u[idx_time, 1] = 0.5
+# idx_time = (t_dt >= 6) & (t_dt <= 11)
+# u[idx_time, 1] = 0.34 + 0.16 * np.sin(2*np.pi * 0.5 * (t_dt[idx_time] - 6)**2 /5)
+# idx_time = t_dt >= 11
+# u[idx_time, 1] = 0.34
+
+# idx_time = t_dt <= 12
+# u[idx_time, 2] = 0.135
+# idx_time = (t_dt >= 12) & (t_dt <= 17)
+# u[idx_time, 2] = 0.07 + 0.07 * np.sin(2*np.pi * 0.5 * (t_dt[idx_time] - 12 )**2 /5)
+# idx_time = t_dt >= 17
+# u[idx_time, 2] = 0.07
 
 # u[:, 3] = 1
 
@@ -302,9 +323,9 @@ print('average err in y: ', np.mean(error))
 
 # Optimization weights
 Q = 1000*np.eye(p)
-R = 10*np.eye(m)
+R = 50*np.eye(m)
+# Q[0,0]=5000
 S = 100*Q
-
 
 time_cl = []
 Vcl = []
@@ -394,6 +415,8 @@ while t < T_sim - 1e-9:
     x_traj[:, i] = x_est
     
     Vcl.append(Vmeas_cl)
+    # if t>6: 
+    #     R = 5*np.eye(m)
 
 print('Closed-loop run complete')
 
