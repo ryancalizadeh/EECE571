@@ -276,9 +276,20 @@ u_traj = np.zeros((m, steps))
 
 # Initialize the system 
 y_meas = y_0 
-# approximate x0 from initial voltages and initialize x_traj
+# approximate x0 from initial voltages and initialize x_traj 
 x_0 = np.linalg.pinv(C_id) @ (y_0 - D_id @ u_0)
 x_traj[:, 0] = x_0
+
+# ASIDE: mini test 
+y_current = C_id @ x_0 + D_id @ u_0
+x_next = A_id @ x_0 + B_id @ u_0
+
+print('current y: ', y_current)
+print('error in y: ', np.abs(y_0 - y_current)/y_0*100)
+print('current x: ', x_0[0:3])
+print('next x: ', x_next[0:3])
+print('avg error in x: ', np.mean(np.abs(x_0 - x_next)/x_0)*100)
+
 
 # Optimization weights
 Q = 1000*np.eye(p)
@@ -291,7 +302,8 @@ Vcl = []
 Ucl = []
 
 print('Starting closed-loop external control loop (MPC applied)...')
-case = 'IEEE_cases/ieee14_gentrip_v0.xlsx'
+# case = 'IEEE_cases/ieee14_gentrip_v0.xlsx'
+case = 'IEEE_cases/ieee14_base_v0.xlsx'
 ss_cl = andes.load(case)
 
 ss_cl.PQ.config.p2p = 1.0
@@ -345,7 +357,7 @@ while t < T_sim - 1e-9:
     problem.solve()
 
     # Apply first control input and update the system state
-    u_opt = u[:, 0].value    
+    u_opt = u[:, 0].value  
     print("optimal control input u at time ", t, " is ", u_opt)
     Ucl.append(u_opt)
 
