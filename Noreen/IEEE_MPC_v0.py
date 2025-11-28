@@ -63,7 +63,7 @@ from sippy_unipi import system_identification as sysid
 import casadi as ca
 from control import ss, forced_response
 
-from funcs import *
+from funcs import ANDES_Case_Runner, append_alter_rows
 
 # %%
 # 1) Load IEEE-14 and run an open-loop simulation to collect data
@@ -71,7 +71,7 @@ from funcs import *
 print("--------------------- 1. Running Dynamic Simulation ---------------------")
 
 # case = 'kundur_full.xlsx'  
-case = 'IEEE_cases/ieee14_alter_v4.xlsx'  
+case = 'IEEE_cases/ieee14_alter_v4.xlsx' 
 # case = 'IEEE_cases/ieee14_alter_v3.xlsx'  
 # case = 'IEEE_cases/ieee14_alter_v0.xlsx'  
 # case = 'IEEE_cases/ieee14_v0.xlsx'  
@@ -147,13 +147,10 @@ plt.plot(t_dt, u[:,2], '.', label='PQ_ Input')
 plt.title('Inputs (pu)')
 plt.xlabel('Time (s)')
 plt.grid(True)
-# plt.savefig('IEEE14_Inputs.png')
+plt.savefig('IEEE14_Inputs.png')
 
 # Build DataFrame for easy handling
 cols = ['t'] + [f'V_b{b}' for b in buses_of_interest]
-print('time shape:', np.shape(time.reshape(-1,1)))
-print('V_meas shape:', np.shape(V_meas))
-# d = np.hstack([time.reshape(-1,1), V_meas])
 d = np.hstack([time.reshape(-1, 1), V_meas])
 data = data_cleaner.data_cleaner(d)
 
@@ -215,6 +212,14 @@ x0_estimate = np.linalg.pinv(Observability_matrix) @ ABC
 
 print("Estimated initial state x0: ", x0_estimate)
 
+# Controllability check 
+Controllability_matrix = np.hstack([np.linalg.matrix_power(A_id, i) @ B_id for i in range(model_order)])
+rank_of_controllability = np.linalg.matrix_rank(Controllability_matrix)
+if rank_of_controllability == model_order:
+    print("The system is controllable. Any state belonging in R^n can be reach in (at most) n steps.")
+else:
+    print("The system is NOT controllable!!!!!!!!!!!!!!!!!!!!")
+
 # Now, simulate the identified model's response using the estimated initial state 
 # and the original inputs u. 
 y_id = np.zeros((len(t_dt), p))
@@ -260,14 +265,14 @@ D_ca = ca.DM(D_id)
 
 # MPC parameters
 N_horizon = 20  # prediction horizon
-# dt_sample = time[1] - time[0]  # uniform sampling
 print('Sampling dt from ANDES data:', dt)
 
 # Define weighting matrices
-Q = np.diag([100]*len(buses_of_interest))  # penalize voltages 
+Q = 100*np.diag([1]*len(buses_of_interest))  # penalize voltages 
+# Q[1, 1] = 1000
 print('Q Matrix: ', Q)
 R = 10 * np.eye(m)
-
+S = 10*Q
 # Build MPC optimization problem
 opti = ca.Opti()
 
@@ -277,29 +282,29 @@ X_var = opti.variable(n, N_horizon+1)
 
 # parameter: initial state and reference
 X0_param = opti.parameter(n)
-Yref_param = opti.parameter(p, N_horizon)
+Yref_param = opti.parameter(p)
+
 
 # initial condition constraint
 opti.subject_to(X_var[:,0] == X0_param)
 
-# cost
+# Initialize cost
 cost = 0
 for k in range(N_horizon):
     # predicted output y_k = C x_k + D u_k
     yk = C_ca @ X_var[:,k] + D_ca @ U_var[:,k]
-    # reference at step k
-    yrefk = Yref_param[:,k]
-    print("yrefk: ", yrefk)
+
     # stage cost
-    cost += ca.mtimes([(yk - yrefk).T, ca.DM(Q), (yk - yrefk)]) + ca.mtimes([U_var[:,k].T, ca.DM(R), U_var[:,k]])
+    cost += ca.mtimes([(yk - Yref_param).T, ca.DM(Q), (yk - Yref_param)]) + ca.mtimes([U_var[:,k].T, ca.DM(R), U_var[:,k]])
     # dynamics constraint: x_{k+1} = A x_k + B u_k
     xnext = A_ca @ X_var[:,k] + B_ca @ U_var[:,k]
     opti.subject_to(X_var[:,k+1] == xnext)
 
+cost += ca.mtimes([(yk - Yref_param).T, ca.DM(S), (yk - Yref_param)])
 opti.minimize(cost)
 
 # input constraints (example saturations)
-u_min = -5
+u_min = 0
 u_max = 5
 opti.subject_to(opti.bounded(u_min, U_var, u_max))
 
@@ -341,30 +346,32 @@ Vcl = []
 Ucl = []
 
 # initialize state estimate
-x_est = np.zeros(n)
+# x_est = np.zeros(n)
 
 # run loop
 print('Starting closed-loop external control loop (MPC applied)...')
+case = 'IEEE_cases/ieee14_gentrip_v0.xlsx'
+# case = 'IEEE_cases/ieee14_base_v0.xlsx'
+ss_cl = andes.load(case)
+
+ss_cl.PQ.config.p2p = 1.0
+ss_cl.PQ.config.p2i = 0
+ss_cl.PQ.config.p2z = 0
+
+ss_cl.PQ.config.q2q = 1.0
+ss_cl.PQ.config.q2i = 0
+ss_cl.PQ.config.q2z = 0
+
+ss_cl.PQ.pq2z = 0
+ss_cl.TDS.config.criteria = 0  # temporarily turn off stability criteria based on angle separation
+ss_cl.TDS.config.tstep = dt_ctrl
+
+ss_cl.PFlow.run()
+
+# run ANDES forward by dt_ctrl
 while t < t_end - 1e-9:
-    # Reset ANDES to baseline and re-add disturbances (we will re-run dynamic sim in small increments)
-    case = 'IEEE_cases/ieee14_gentrip_v0.xlsx'
-    ss_cl = andes.load(case)
-
-    ss_cl.PQ.config.p2p = 1.0
-    ss_cl.PQ.config.p2i = 0
-    ss_cl.PQ.config.p2z = 0
-
-    ss_cl.PQ.config.q2q = 1.0
-    ss_cl.PQ.config.q2i = 0
-    ss_cl.PQ.config.q2z = 0
-
-    ss_cl.PQ.pq2z = 0
-
-    ss_cl.PFlow.run()
     # run ANDES forward by dt_ctrl
     ss_cl.TDS.config.tf = t + dt_ctrl
-    ss_cl.TDS.config.criteria = 0  # temporarily turn off stability criteria based on angle separation
-    ss_cl.TDS.config.tstep = dt_ctrl
     ss_cl.TDS.run()
     t = ss_cl.dae.ts.t[-1]
     print('ANDES stepped to t =', t)
@@ -381,15 +388,11 @@ while t < t_end - 1e-9:
     last_u = np.array([0.217, 0.5, 0.135]) if len(Ucl)==0 else Ucl[-1]
     x_est = C_pinv @ (y_meas - D_np @ last_u)
 
-    # build reference trajectory Yref: zeros (aim for nominal voltages 1.0)
-    # here y references: voltages -> 1.0 pu
-    # y_ref_step = np.hstack([np.ones(len(buses_of_interest))])
-    y_ref_step = np.hstack([1.0197, 0.99858, 1.00682, 1.00193])  # nominal voltages from initial sim
-    Yref = np.tile(y_ref_step.reshape(-1,1), (1, N_horizon))
-
     # set MPC parameters and initial condition
     opti.set_value(X0_param, x_est)
-    opti.set_value(Yref_param, Yref)
+    # y_ref_step = 1 + 0.1 * np.sin(t)*np.ones(p)
+    y_ref_step = np.hstack([1.0197, 0.99858, 1.00682, 1.00193]) # nominal voltages from initial sim
+    opti.set_value(Yref_param, y_ref_step)
 
     # initial guess (warm start) optional
     opti.set_initial(X_var, np.tile(x_est.reshape(-1,1), (1, N_horizon+1)))
@@ -402,19 +405,14 @@ while t < t_end - 1e-9:
         print('MPC solve failed at t=', t, 'error:', e)
         # fallback: zero control
         u_opt = np.zeros(m)
-    append_alter_rows('IEEE_cases/ieee14_gentrip_v0.xlsx', u_opt, t)
-    # apply u_opt to ANDES: for this notebook the inputs represent scheduled active power injections
-    # We'll emulate this by adding a custom injection action or by modifying load offsets.
-    # As a simple approach, modify a set of pseudo 'battery' injections at certain buses maintained
-    # as time-series events. If ANDES does not support direct runtime injection updates, you may
-    # instead update generator reference setpoints or exciter inputs. Adjust this to your environment.
+    ss_cl.PQ.Ppf.v[0] = u_opt[0]
+    ss_cl.PQ.Ppf.v[1] = u_opt[1]
+    ss_cl.PQ.Ppf.v[9] = u_opt[2]
+    
     print("optimal control input u at time ", t, " is ", u_opt)
-    # For demonstration, store the control and continue (user should map these to actual model inputs)
+
     Ucl.append(u_opt)
     Vcl.append(Vmeas_cl)
-
-    # In a real run you would call an API like ss_cl.set('Battery', dict(...)) or update generator setpoints.
-    # Example placeholder: ss_cl.set_input_vector(u_opt)
 
 print('Closed-loop run complete')
 
@@ -426,10 +424,12 @@ Ucl = np.vstack(Ucl)
 # %%
 # 7) Plot closed-loop results
 print("--------------------- 7. Plotting Results ---------------------")
-
+color = ['blue', 'orange', 'green', 'red']
 plt.figure(figsize=(10,6))
 for i,b in enumerate(buses_of_interest):
-    plt.plot(time_cl, Vcl[:,i], label=f'Bus {b}')
+    plt.plot(time_cl, Vcl[:,i], label=f'Bus {b}', color = color[i])
+    # plt.plot(time_cl, 1 + 0.1 * np.sin(time_cl), linestyle = '--')
+    plt.axhline(y_ref_step[i], color=color[i], linestyle='--')
 plt.title('Closed-loop selected bus voltages (pu)')
 plt.xlabel('Time (s)')
 plt.legend()
